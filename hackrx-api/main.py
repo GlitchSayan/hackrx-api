@@ -6,16 +6,15 @@ import openai
 import pinecone
 from io import BytesIO
 from pdfminer.high_level import extract_text
-
-# Load API Keys from environment variables
 import os
+
+# Load environment variables
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 PINECONE_ENV = os.environ.get("PINECONE_ENVIRONMENT")
 BEARER_TOKEN = os.environ.get("BEARER_TOKEN", "hackrx-secret")
 
 openai.api_key = OPENAI_API_KEY
-
 app = FastAPI()
 
 class QARequest(BaseModel):
@@ -34,23 +33,19 @@ async def verify_auth(request: Request, call_next):
 
 @app.post("/hackrx/run", response_model=QAResponse)
 async def run_qa(request: QARequest):
-    # 1. Download and extract PDF
     pdf_text = extract_text(BytesIO(requests.get(request.documents).content))
     chunks = chunk_text(pdf_text)
 
-    # 2. Init Pinecone
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
     index_name = "hackrx-index"
     if index_name not in pinecone.list_indexes():
         pinecone.create_index(index_name, dimension=1536)
     index = pinecone.Index(index_name)
 
-    # 3. Embed chunks
     embedded_chunks = [get_embedding(c) for c in chunks]
     vectors = [(f"id_{i}", vec, {"text": chunk}) for i, (vec, chunk) in enumerate(zip(embedded_chunks, chunks))]
     index.upsert(vectors=vectors)
 
-    # 4. Answer questions
     answers = []
     for q in request.questions:
         q_embed = get_embedding(q)
@@ -59,7 +54,6 @@ async def run_qa(request: QARequest):
         answers.append(answer)
 
     return {"answers": answers}
-
 
 def chunk_text(text, max_tokens=300):
     lines = text.split('\n')
@@ -74,16 +68,13 @@ def chunk_text(text, max_tokens=300):
         chunks.append(chunk)
     return chunks
 
-
 def get_embedding(text):
     response = openai.Embedding.create(model="text-embedding-ada-002", input=text)
     return response['data'][0]['embedding']
 
-
 def retrieve_context(q_embedding, index, top_k=3):
     res = index.query(vector=q_embedding, top_k=top_k, include_metadata=True)
     return "\n".join([match["metadata"]["text"] for match in res["matches"]])
-
 
 def ask_gpt4(question, context):
     prompt = f"""You are a helpful assistant. Use the following context to answer the question.
