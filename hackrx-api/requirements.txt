@@ -1,6 +1,6 @@
 fastapi
-uvicorn[standard]
+uvicorn
+requests
 openai
 pinecone-client
-requests
 pdfminer.six
